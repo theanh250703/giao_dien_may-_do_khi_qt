@@ -41,7 +41,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(taktTime, &QTimer::timeout, this, &MainWindow::countdown_func);
 
     // gia lap tin hieu phan hoi tu PLC va check trang thai san pham
-    connect(ui->pushButton_3, &QPushButton::clicked, this, &MainWindow::sgn_plc);
+    // connect(ui->pushButton_3, &QPushButton::clicked, this, &MainWindow::sgn_plc);
     connect(sts_product_timer, &QTimer::timeout, this, &MainWindow::check_sts_product);
 
     connect(ui->pushButton_5, &QPushButton::clicked, this, &MainWindow::readCoilDataPlc);
@@ -49,7 +49,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->pushButton_7, &QPushButton::clicked, this, [=]() {
         writeDataPlc(true);
         takt_time_func();
-        // sts_product_timer->start(100);
     });
 
     connect(ui->pushButton_6, &QPushButton::clicked, this, [=]() {
@@ -227,7 +226,7 @@ void MainWindow::check_sts_product()
     if(cycle_time > 0 && response_from_plc == true)
     {
         ui->label_product->setText("OK");
-        ui->label_product->setStyleSheet("color: yellow;"
+        ui->label_product->setStyleSheet("color: black;"
                                              "font-size: 100px;"
                                              "font-weight: bold;"
                                              "background-color: rgb(0,255,0);"
