@@ -21,19 +21,12 @@ MainWindow::MainWindow(QWidget *parent)
     audioOutput = new QAudioOutput;
 
     // load port va cap nhat cong com
-    // load_port();
-    // update_com_func();
     connect(updateCom, &QTimer::timeout, this, &MainWindow::update_com_func);
-    updateCom->start(1000);                         // cap nhat com moi 1s
+    updateCom->start(1000);                      // cap nhat cong com moi 1s
 
-    // load portcom modbus va doc du lieu
-    // initModbusSerial("COM10");
-    // connect(updateCom, &QTimer::timeout, this, &MainWindow::checkAndReconnect);
-    // autoConnectTimer->start();
-
-    // reconnect com modbus
+    // checkAndReconnect va load portcom modbus
     connect(autoConnectTimer, &QTimer::timeout, this, &MainWindow::checkAndReconnect);
-    autoConnectTimer->start(1000);
+    // autoConnectTimer->start(500);
 
     // ket noi cong com
     connect(ui->btn_connect_com, &QPushButton::clicked, this,[=]
@@ -42,7 +35,7 @@ MainWindow::MainWindow(QWidget *parent)
         });
 
     // nhan tin hieu barcode va chay takt time
-    connect(ui->pushButton_4, &QPushButton::clicked, this, &MainWindow::takt_time_func);        // sgn_barcode
+    // connect(ui->pushButton_4, &QPushButton::clicked, this, &MainWindow::takt_time_func);       // sgn_barcode
 
     //slot thuc hien phat ra signal dem nguoc mot giay 1 lan
     connect(taktTime, &QTimer::timeout, this, &MainWindow::countdown_func);
@@ -51,16 +44,20 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->pushButton_3, &QPushButton::clicked, this, &MainWindow::sgn_plc);
     connect(sts_product_timer, &QTimer::timeout, this, &MainWindow::check_sts_product);
 
-    connect(ui->pushButton_5, &QPushButton::clicked, this, &MainWindow::readDataPlc);
+    connect(ui->pushButton_5, &QPushButton::clicked, this, &MainWindow::readCoilDataPlc);
 
     connect(ui->pushButton_7, &QPushButton::clicked, this, [=]() {
         writeDataPlc(true);
+        takt_time_func();
+        // sts_product_timer->start(100);
     });
 
     connect(ui->pushButton_6, &QPushButton::clicked, this, [=]() {
         writeDataPlc(false);
     });
 
+    // connect doc data IO plc
+    connect(readDataPlcTimer, &QTimer::timeout, this, &MainWindow::readIoPlc);
 }
 
 MainWindow::~MainWindow()
@@ -110,13 +107,22 @@ void MainWindow::update_com_func()
 
     list_current_port = list_new_port;
 
-
     if(list_new_port.isEmpty()) {
         ui->comboBoxCom->clear();
     }
 
     qDebug()<<"List Port: "<<list_current_port;
 
+    ///////////////////////////////////////
+    if(list_current_port.contains(portPlc) && plcConnected  == true)
+    {
+        autoConnectTimer->stop();
+        // readDataPlcTimer->start(500);
+    }
+    if(!list_current_port.contains(portPlc))
+    {
+        autoConnectTimer->start(500);
+    }
 }
 
 void MainWindow::connect_port(const QString &portName)
@@ -127,7 +133,7 @@ void MainWindow::connect_port(const QString &portName)
         return;
     }
 
-    // dug cap nhat cong com de tien hanh ket noi
+    // dung cap nhat cong com de tien hanh ket noi
     updateCom->stop();
 
     if (COMPORT != nullptr && COMPORT->isOpen()) {
@@ -186,8 +192,8 @@ void MainWindow::takt_time_func()
 {
     cycle_time = ui->spinBox->value();
     ui->lineEditTaktTime->setText(QString::number(cycle_time));
-    taktTime->start(1000);
-    sts_product_timer->start(100);
+    taktTime->start(1000);              // bat dau chay ham countdown_func
+    sts_product_timer->start(100);      // bat dau chay ham check_sts_product
     barcode_active = true;
 }
 
@@ -208,6 +214,7 @@ void MainWindow::countdown_func()
 
 void MainWindow::sgn_plc()
 {
+    // gia lap barcode
     if(barcode_active == true)
     {
         response_from_plc = true;
@@ -233,7 +240,7 @@ void MainWindow::check_sts_product()
         sts_product_timer->stop();
     }
 
-    else if((cycle_time <= 0 && response_from_plc == false))
+    else if((cycle_time <= 0))
     {
         ui->label_product->setText("NG");
         ui->label_product->setStyleSheet("color: yellow;"
@@ -267,32 +274,18 @@ void MainWindow::initModbusSerial(const QString &port)
     qmodbus_serial->setNumberOfRetries(2);
 }
 
-void MainWindow::readDataPlc()
-{
-    if (qmodbus_serial->state() != QModbusDevice::ConnectedState)
-        return;
-
-    QModbusDataUnit data(QModbusDataUnit::Coils, 3, 1);
-
-    if (QModbusReply *reply = qmodbus_serial->sendReadRequest(data, 1))
-    {
-        connect(reply, &QModbusReply::finished,
-                this, &MainWindow::ready_Read);
-    }
-}
-
 void MainWindow::writeDataPlc(bool value)
 {
-    if (!qmodbus_serial)
+    if (!qmodbus_serial)                                // kiem tra con tro qmodbus_serial rong ko (qmodbus_serial != nullptr)
         return;
 
     if (qmodbus_serial->state() != QModbusDevice::ConnectedState)
         return;
 
-    QModbusDataUnit data(QModbusDataUnit::Coils, 3, 1);
-    data.setValue(0, value);
+    QModbusDataUnit data(QModbusDataUnit::Coils, 5, 1);
+    data.setValue(0, value);                            // dat thanh ghi o vi tri 0 (coil m3) voi gia tri value
 
-    if (QModbusReply *reply = qmodbus_serial->sendWriteRequest(data, 1))
+    if (QModbusReply *reply = qmodbus_serial->sendWriteRequest(data, 1))    // slave id: 1
     {
         connect(reply, &QModbusReply::finished, this, [=]()
                 {
@@ -313,6 +306,21 @@ void MainWindow::writeDataPlc(bool value)
     }
 }
 
+void MainWindow::readCoilDataPlc()
+{
+    // check trang thai xem da ket noi chua
+    if (qmodbus_serial->state() != QModbusDevice::ConnectedState)
+        return;
+
+    QModbusDataUnit data(QModbusDataUnit::Coils, 3, 1);
+
+    if (QModbusReply *reply = qmodbus_serial->sendReadRequest(data, 1))
+    {
+        connect(reply, &QModbusReply::finished,
+                this, &MainWindow::ready_Read);
+    }
+}
+
 void MainWindow::ready_Read()
 {
     auto reply = qobject_cast<QModbusReply*>(sender());             // sender: tra ve Qobject cua doi tuong da phat ra signal (QModbusReply)
@@ -325,116 +333,103 @@ void MainWindow::ready_Read()
     else if(reply->error() == QModbusDevice::NoError)
     {
         const QModbusDataUnit data = reply->result();
-        // qDebug()<< data.value(0);                        // tra ve mot QVector la q mang quint16
-        // vector_data_plc.append(data.values(0));
-
         coilValue = data.value(0);
-
-        vector_data_plc.append(data.values());
-
         qDebug()<<"Coil value"<<coilValue;
-
-        // QString str1 = QString("%1").arg(data.value(0));
-
         ui->data_serial->setText(coilValue ? "ON" : "OFF");
-
-        vector_data_plc.clear();                        // xoa du lieu trong vecto sau moi lan cap nhat du lieu, neu ko bi de them vao mang
     }
-    reply->deleteLater();                               // xoa object o vong lap tiep theo tranh crash
+    reply->deleteLater();                                   // xoa object o vong lap tiep theo tranh crash
 
 }
 
 void MainWindow::checkAndReconnect()
 {
-    if (plcConnected &&
-        qmodbus_serial->state() == QModbusDevice::ConnectedState)
-        return;
-
+    // bool foundPlc = false;
+    n++;
     for (const QString &port : list_current_port)
     {
         qDebug() << "Try PLC on" << port;
 
-        qmodbus_serial->disconnectDevice();
-
+        qmodbus_serial->disconnectDevice();                 // dong ket noi
         initModbusSerial(port);
-
         qmodbus_serial->connectDevice();
 
         QModbusDataUnit test(QModbusDataUnit::Coils, 3, 1);
 
-        if (QModbusReply *reply = qmodbus_serial->sendReadRequest(test, 1))
-        {
-            connect(reply, &QModbusReply::finished, this, [=]()
+        // sendReadRequest tra ve 1 object reply neu ko co loi, tra ve nullptr neu ko doc duoc
+        QModbusReply *reply = qmodbus_serial->sendReadRequest(test, 1);
+        if (!reply)         // reply == nullptr
+            continue;
+
+        connect(reply, &QModbusReply::finished, this, [=]()
+                {
+                    if (reply->error() == QModbusDevice::NoError)
                     {
-                        if (reply->error() == QModbusDevice::NoError)
-                        {
-                            plcConnected = true;
-                            portPlc = port;
+                        plcConnected = true;
+                        foundPlc = true;
+                        n = 0;
+                        portPlc = port;
 
-                            ui->label->setText(port);
-                            qDebug() << "PLC FOUND ON" << port;
+                        ui->label->setText(port);
+                        qDebug() << "PLC FOUND ON" << port;
 
-                            readDataPlcTimer->start(100);
-                        }
-                        reply->deleteLater();
-                    });
-            return;
-        }
+                        if (!readDataPlcTimer->isActive())      // neu chua bat dau doc data
+                            readDataPlcTimer->start(500);
+                    }
+                    else
+                    {
+                        qDebug() << "PLC not on" << port << reply->errorString();
+                    }
+                    reply->deleteLater();
+                });
+        break;  //warning quet bo qua com (can sua) // sua toi qua
     }
 
-    plcConnected = false;
-    ui->label->setText("PLC OFFLINE");
+    qDebug() << "PLC FOUND ON:" << portPlc;
+
+    if(n > 3)
+    {
+        foundPlc = false;
+        plcConnected = false;
+        if (!foundPlc)
+        {
+            ui->label->setText("PLC OFFLINE");
+
+            if (readDataPlcTimer->isActive())
+                readDataPlcTimer->stop();
+        }
+    }
 }
 
+void MainWindow::readIoPlc()
+{
+    if(qmodbus_serial->state() == QModbusDevice::UnconnectedState)
+        return;
 
-// void MainWindow::checkAndReconnect()
-// {
-//     if (plcConnected && qmodbus_serial->state() == QModbusDevice::ConnectedState)
-//     {
-//         return;
-//     }
+    //IO
+    // QModbusDataUnit data(QModbusDataUnit::DiscreteInputs, 2, 1);         // doc dau vao X2
+    // QModbusReply *reply = qmodbus_serial->sendReadRequest(data, 1);
 
-//     for (const QString &port : list_current_port)
-//     {
-//         qDebug() << "Try PLC on" << port;
+    //doc coil M
+    QModbusDataUnit data(QModbusDataUnit::Coils, 3, 1);
+    QModbusReply *reply = qmodbus_serial->sendReadRequest(data, 1);
+    if(reply == nullptr)
+    {
+        qDebug()<<"no respon IO";
+        return;
+    }
 
-//         qmodbus_serial->disconnectDevice();
-
-//         if (qmodbus_serial->connectDevice())
-//         {
-//             if (qmodbus_serial->state() == QModbusDevice::ConnectedState)
-//             {
-//                 initModbusSerial(port);
-//                 writeDataPlc(true);
-
-//                 readDataPlcTimer->start(100);
-
-//                 if(coilValue == true)
-//                 {
-//                     plcConnected = true;
-//                     portPlc = port;
-
-//                     ui->label->setText(port);
-//                     qDebug() << "PLC FOUND ON" << port;
-//                     return;
-//                 }
-
-//                 else
-//                 {
-//                     qDebug() << "COM KO MO" << port;
-//                 }
-
-//             }
-//         }
-//         else
-//         {
-//             qDebug() << "KO TIM THAY COM PLC" << port;
-//         }
-//     }
-
-//     plcConnected = false;
-//     ui->label->setText("PLC OFFLINE");
-// }
+    connect(reply, &QModbusReply::finished, this, [=]
+            {
+        if(reply->error() == QModbusDevice::NoError)
+            {
+            QModbusDataUnit dataPlcIO;
+            dataPlcIO = reply->result();
+            response_from_plc = dataPlcIO.value(0);
+            // qDebug()<<"response_from_plc "<<response_from_plc;
+            ui->label_2->setText(response_from_plc ? "ON" : "OFF");
+        }
+    });
+}
 
 void MainWindow::playAudio(const QString &text)
 {
