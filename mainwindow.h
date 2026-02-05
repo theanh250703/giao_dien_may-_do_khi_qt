@@ -11,6 +11,7 @@
 #include <QAudioFormat>
 #include <QFile>
 #include <QMediaPlayer>
+#include <QThread>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -53,7 +54,6 @@ private:
 
     // nhan phan hoi tu PLC va hien thi trang thai san pham (gia lap)
     bool sts_prodcut = false;
-    bool response_from_plc = false;
     bool barcode_active = false;   // chi nhan gia tri plc khi da quet barcode
 
     int countNG = 0;
@@ -73,17 +73,18 @@ private:
     QString portPlc;
     bool plcConnected = false;
 
+    bool foundPlc;
+    int n = 0;
+
     void initModbusSerial(const QString &port);
-    // void initModbusSerial();
     void checkAndReconnect();           // tim va tu dong ket noi com voi plc
     void writeDataPlc(bool value);
-    void readDataPlc();
+    // doc coil
+    void readCoilDataPlc();
     void ready_Read();
-
-
-
-
-    QVector<quint16> vector_data_plc;
+    // doc dau vao x
+    void readIoPlc();
+    bool response_from_plc = false;
 
     // phat am thanh ra loa
     QMediaPlayer *player;
